@@ -1,0 +1,33 @@
+/* index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #0a0a0a; /* Replaced CSS variable for now */
+  color: #ffffff;
+}
+
+/* Custom scrollbar for cyber theme */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a1a; /* Replaced CSS variable for now */
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00d4ff; /* Replaced CSS variable for now */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00a8cc;
+}
