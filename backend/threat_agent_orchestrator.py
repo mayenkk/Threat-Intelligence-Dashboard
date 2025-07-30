@@ -19,7 +19,6 @@ import requests
 # LangGraph imports
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, AIMessage
-from langchain_google_vertexai import ChatVertexAI
 
 # Local imports
 from ai_analyzer import ThreatAIAnalyzer
@@ -57,17 +56,8 @@ class ThreatAgentOrchestrator:
     """
     
     def __init__(self, project_id: str = "itd-ai-interns", region: str = "us-central1"):
-        self.project_id = project_id
-        self.region = region
-        
-        # Initialize Vertex AI LLM for agents
-        self.llm = ChatVertexAI(
-            model_name="gemini-2.0-flash",
-            project=project_id,
-            location=region,
-            temperature=0.1,
-            max_output_tokens=2048
-        )
+        self.groq_api_key = os.getenv("GROQ_API_KEY")
+        self.groq_model = "llama-3.3-70b-versatile" 
         
         # Initialize existing AI analyzer
         self.ai_analyzer = ThreatAIAnalyzer()
@@ -141,13 +131,20 @@ class ThreatAgentOrchestrator:
         return workflow.compile()
     
     async def _query_llm_async(self, prompt: str) -> str:
-        """Helper method to query LLM asynchronously"""
-        try:
-            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-            return response.content
-        except Exception as e:
-            logger.error(f"LLM query failed: {e}")
-            return "{\"error\": \"LLM query failed\"}"
+        def query_groq(prompt: str) -> str:
+            url = "https://api.groq.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.groq_api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": self.groq_model,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            response = requests.post(url, headers=headers, json=data, timeout=60)
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+        return await asyncio.to_thread(query_groq, prompt)
     
     def _parse_json_response(self, response: str) -> Dict:
         """Parse JSON response from LLM"""

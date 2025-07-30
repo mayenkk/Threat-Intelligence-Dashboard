@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AI-Powered Threat Intelligence Analyzer
-Uses Google Vertex AI for advanced threat analysis
+Uses Groq API for advanced threat analysis
 """
 
 import asyncio
@@ -12,11 +12,8 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union
 import logging
 import hashlib
-
-# Vertex AI imports
-import vertexai
-from vertexai.generative_models import GenerativeModel, SafetySetting, HarmCategory
 import os
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,50 +21,27 @@ logger = logging.getLogger(__name__)
 
 class ThreatAIAnalyzer:
     """
-    AI-powered threat intelligence analyzer using Google Vertex AI
+    AI-powered threat intelligence analyzer using Groq API
     """
     
-    def __init__(self, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, model_name: str = "llama-3.3-70b-versatile"):
         """
-        Initialize the AI analyzer with Vertex AI
+        Initialize the AI analyzer with Groq API
         
         Args:
-            model_name: Vertex AI model to use
+            model_name: Groq model to use
         """
         self.model_name = model_name
-        self.project_id = "itd-ai-interns"
-        self.region = "us-central1"
+        self.groq_api_key = os.getenv("GROQ_API_KEY")
         
-        # Initialize Vertex AI
-        self._init_vertex_ai()
+        if not self.groq_api_key:
+            raise ValueError("GROQ_API_KEY environment variable is required")
         
         # Initialize database connection
         self.conn = sqlite3.connect('../data/threats.db', check_same_thread=False)
         self._init_analysis_tables()
         
-        logger.info(f"✅ ThreatAIAnalyzer initialized with Vertex AI model: {model_name}")
-    
-    def _init_vertex_ai(self):
-        """Initialize Vertex AI connection"""
-        try:
-            # Set environment variables
-            os.environ['GOOGLE_CLOUD_LOCATION'] = self.region
-            os.environ['GOOGLE_GENAI_USE_VERTEXAI'] = 'True'
-            os.environ['GOOGLE_CLOUD_PROJECT'] = self.project_id
-            
-            # Initialize Vertex AI
-            vertexai.init(project=self.project_id, location=self.region)
-            
-            # Test connection with a simple query
-            test_model = GenerativeModel(self.model_name)
-            test_response = test_model.generate_content("Test connection")
-            
-            logger.info("✅ Vertex AI connection established successfully")
-            
-        except Exception as e:
-            logger.error(f"❌ Vertex AI initialization failed: {e}")
-            logger.info("💡 Make sure you're authenticated: gcloud auth application-default login")
-            raise
+        logger.info(f"✅ ThreatAIAnalyzer initialized with Groq model: {model_name}")
     
     def _init_analysis_tables(self):
         """Initialize analysis tables in database"""
@@ -136,7 +110,7 @@ class ThreatAIAnalyzer:
     
     async def analyze_threat(self, threat_data: Dict) -> Dict:
         """
-        Analyze a single threat using Vertex AI
+        Analyze a single threat using Groq API
         
         Args:
             threat_data: Dictionary containing threat information
@@ -159,11 +133,11 @@ class ThreatAIAnalyzer:
             # Prepare analysis prompt
             analysis_prompt = self._create_analysis_prompt(threat_data)
             
-            # Call Vertex AI
-            ai_response = await self._query_vertex_ai(analysis_prompt)
+            # Call Groq API
+            ai_response = await self._query_groq_api(analysis_prompt)
             
-            # Parse AI response
-            analysis_result = self._parse_ai_response(ai_response, threat_data)
+            # Parse Groq response
+            analysis_result = self._parse_groq_response(ai_response, threat_data)
             
             # Add logistics-specific analysis
             analysis_result = self._enhance_logistics_analysis(analysis_result, threat_data)
@@ -184,10 +158,10 @@ class ThreatAIAnalyzer:
             return self._create_fallback_analysis(threat_data)
     
     def _create_analysis_prompt(self, threat_data: Dict) -> str:
-        """Create structured prompt for Vertex AI analysis"""
+        """Create structured prompt for Groq API analysis"""
         
         title = threat_data.get('title', '')
-        content = threat_data.get('content', '')[:3000]  # Vertex AI can handle more content
+        content = threat_data.get('content', '')[:3000]  # Groq can handle more content
         source = threat_data.get('source', '')
         
         prompt = f"""
@@ -241,49 +215,34 @@ Respond with ONLY the JSON object, no additional text.
 """
         return prompt
     
-    async def _query_vertex_ai(self, prompt: str) -> str:
-        """Query Vertex AI asynchronously"""
-        try:
-            query_start = datetime.now()
-            
-            # Initialize the generative model
-            model = GenerativeModel(self.model_name)
-            
-            # Configure generation parameters for consistent analysis
-            generation_config = {
-                "temperature": 0.1,  # Low temperature for consistent, factual analysis
-                "top_p": 0.8,
-                "top_k": 40,
-                "max_output_tokens": 4096,
+    async def _query_groq_api(self, prompt: str) -> str:
+        """Query Groq API asynchronously"""
+        def query_groq(prompt: str) -> str:
+            headers = {
+                "Authorization": f"Bearer {self.groq_api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": self.model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 4096
             }
             
-            # Generate content asynchronously
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: model.generate_content(
-                    prompt,
-                    generation_config=generation_config
-                )
-            )
-            
-            query_time = (datetime.now() - query_start).total_seconds()
-            logger.debug(f"🤖 Vertex AI query completed in {query_time:.2f}s")
-            
-            return response.text
-            
-        except Exception as e:
-            logger.error(f"❌ Vertex AI query failed: {e}")
-            raise Exception(f"Vertex AI analysis failed: {str(e)}")
+            response = requests.post("https://api.groq.com/v1/chat/completions", headers=headers, json=payload, timeout=60)
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+        
+        return await asyncio.to_thread(query_groq, prompt)
     
-    def _parse_ai_response(self, ai_response: str, threat_data: Dict) -> Dict:
-        """Parse Vertex AI response and extract structured data"""
+    def _parse_groq_response(self, ai_response: str, threat_data: Dict) -> Dict:
+        """Parse Groq response and extract structured data"""
         try:
             # Clean the response - remove markdown formatting if present
             cleaned_response = ai_response.strip()
-            if cleaned_response.startswith(''):
+            if cleaned_response.startswith('```json'):
                 cleaned_response = cleaned_response[7:-3].strip()
-            elif cleaned_response.startswith(''):
+            elif cleaned_response.startswith('```'):
                 cleaned_response = cleaned_response[3:-3].strip()
             
             # Try to extract JSON from response
@@ -311,7 +270,7 @@ Respond with ONLY the JSON object, no additional text.
                 
                 return analysis
             else:
-                logger.warning("⚠️ No valid JSON found in Vertex AI response")
+                logger.warning("⚠️ No valid JSON found in Groq response")
                 logger.debug(f"Response content: {ai_response[:200]}...")
                 raise ValueError("No JSON in response")
                 
@@ -320,7 +279,7 @@ Respond with ONLY the JSON object, no additional text.
             logger.debug(f"Response that failed to parse: {ai_response[:500]}...")
             return self._create_fallback_analysis(threat_data)
         except Exception as e:
-            logger.error(f"❌ Failed to parse Vertex AI response: {e}")
+            logger.error(f"❌ Failed to parse Groq response: {e}")
             return self._create_fallback_analysis(threat_data)
         
         # Continuing from Part 1...
@@ -1357,7 +1316,7 @@ if __name__ == "__main__":
     
     async def test_analyzer():
         """Test the AI analyzer"""
-        print("🤖 Testing Vertex AI Threat Analyzer...")
+        print("🤖 Testing Groq Threat Analyzer...")
         
         try:
             # Initialize analyzer

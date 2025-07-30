@@ -15,6 +15,10 @@ import logging
 import uvicorn
 import os
 import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import our threat intelligence modules
 from data_collector import ThreatDataCollector, CollectionMode
@@ -2484,7 +2488,6 @@ async def get_collection_health_status(
             "generated_at": datetime.now().isoformat()
         }
 
-# Continue with Part 2C3c3c of the API...
 
 @app.get("/api/system/info")
 async def get_system_info():
